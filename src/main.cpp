@@ -1,7 +1,9 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include <chrono>
 #include <stdio.h>
+#include <thread>
 #define GL_SILENCE_DEPRECATION
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 #include <GLES2/gl2.h>
@@ -10,6 +12,17 @@
 
 static void glfw_error_callback(int error, const char *description) {
   fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+}
+
+void limitFPS(int targetFPS) {
+  static auto lastFrameTime = std::chrono::steady_clock::now();
+  auto frameDuration = std::chrono::microseconds(1000000 / targetFPS);
+  auto currentTime = std::chrono::steady_clock::now();
+  auto elapsed = currentTime - lastFrameTime;
+  if (elapsed < frameDuration) {
+    std::this_thread::sleep_for(frameDuration - elapsed);
+  }
+  lastFrameTime = std::chrono::steady_clock::now();
 }
 
 // Main code
@@ -50,9 +63,9 @@ int main(int, char **) {
   // Create window with graphics context
   float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(
       glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
-  GLFWwindow *window =
-      glfwCreateWindow((int)(1280 * main_scale), (int)(800 * main_scale),
-                       "Dear ImGui GLFW+OpenGL3 example", nullptr, nullptr);
+  GLFWwindow *window = glfwCreateWindow(
+      (int)(1280 * main_scale), (int)(800 * main_scale),
+      "Lab6 Computer Network Client & Server", nullptr, nullptr);
   if (window == nullptr)
     return 1;
   glfwMakeContextCurrent(window);
@@ -107,34 +120,6 @@ int main(int, char **) {
   ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
 #endif
   ImGui_ImplOpenGL3_Init(glsl_version);
-
-  // Load Fonts
-  // - If no fonts are loaded, dear imgui will use the default font. You can
-  // also load multiple fonts and use ImGui::PushFont()/PopFont() to select
-  // them.
-  // - AddFontFromFileTTF() will return the ImFont* so you can store it if you
-  // need to select the font among multiple.
-  // - If the file cannot be loaded, the function will return a nullptr. Please
-  // handle those errors in your application (e.g. use an assertion, or display
-  // an error and quit).
-  // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype
-  // for higher quality font rendering.
-  // - Read 'docs/FONTS.md' for more instructions and details. If you like the
-  // default font but want it to scale better, consider using the 'ProggyVector'
-  // from the same author!
-  // - Remember that in C/C++ if you want to include a backslash \ in a string
-  // literal you need to write a double backslash \\ !
-  // - Our Emscripten build process allows embedding fonts to be accessible at
-  // runtime from the "fonts/" folder. See Makefile.emscripten for details.
-  // style.FontSizeBase = 20.0f;
-  // io.Fonts->AddFontDefault();
-  // io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf");
-  // io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf");
-  // io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf");
-  // io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf");
-  // ImFont* font =
-  // io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf");
-  // IM_ASSERT(font != nullptr);
 
   // Our state
   bool show_demo_window = true;
@@ -248,6 +233,7 @@ int main(int, char **) {
     }
 
     glfwSwapBuffers(window);
+    limitFPS(60);
   }
 #ifdef __EMSCRIPTEN__
   EMSCRIPTEN_MAINLOOP_END;

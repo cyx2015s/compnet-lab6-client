@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 4.0)
 
-project(compnet_client)
+project(ComputerNetworkLab6)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,7 +31,7 @@ set(SOURCES
 )
 
 # 将源文件链接到client目标
-add_executable(client ${SOURCES})
+add_executable(main ${SOURCES})
 
 include_directories(
     imgui
@@ -44,5 +44,4 @@ find_package(OpenGL REQUIRED)
 # sudo apt install libglfw3-dev
 find_package(glfw3 REQUIRED)
 
-target_link_libraries(client PRIVATE OpenGL::GL glfw)
-
+target_link_libraries(main PRIVATE OpenGL::GL glfw)
