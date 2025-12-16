@@ -77,6 +77,16 @@ public:
       perror("socket");
       throw std::runtime_error("Socket creation failed");
     }
+    timeval timeout;
+    timeout.tv_sec = 5; // Set timeout to 5 seconds
+    timeout.tv_usec = 0;
+
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout,
+                   sizeof(timeout)) < 0) {
+      perror("setsockopt");
+      close(socket_fd);
+      throw std::runtime_error("Setting socket timeout failed");
+    }
     if (connect(socket_fd, (sockaddr *)&addr, sizeof(addr)) < 0) {
       perror("connect");
       close(socket_fd);
@@ -105,7 +115,7 @@ public:
   std::vector<char> read(size_t size) {
     std::vector<char> buffer(size);
     ssize_t bytesRead = recv(socket_fd, buffer.data(), size, 0);
-    if (bytesRead < 0 && bytesRead != EWOULDBLOCK) {
+    if (bytesRead < 0 && errno != EWOULDBLOCK) {
       perror("recv");
       throw std::runtime_error("Read failed");
     }
@@ -114,10 +124,17 @@ public:
     return buffer;
   }
   void write(const std::vector<char> &data) {
+    ssize_t total = data.size();
+    ssize_t offset = 0;
     ssize_t bytesSent = send(socket_fd, data.data(), data.size(), 0);
-    if (bytesSent < 0) {
-      perror("send");
-      throw std::runtime_error("Write failed");
+    while (bytesSent < total) {
+      if (bytesSent < 0 && errno != EWOULDBLOCK) {
+        perror("send");
+        throw std::runtime_error("Write failed");
+      }
+      offset += bytesSent;
+      bytesSent =
+          send(socket_fd, data.data() + offset, data.size() - offset, 0);
     }
   }
 
@@ -410,6 +427,7 @@ int main(int, char **) {
     // Client UI
     {
       static std::unique_ptr<TcpStream> client;
+      static std::string total_received;
       ImGui::Begin("Client Panel");
       static char server_ip[64] = "127.0.0.1";
       static char server_port[8] = "10829";
@@ -441,7 +459,7 @@ int main(int, char **) {
       ImGui::Separator();
       if (client != nullptr) {
         static char message[1024] = "Hello, Server!";
-        ImGui::InputText("Message", message, sizeof(message));
+        ImGui::InputTextMultiline("Message", message, sizeof(message));
         if (ImGui::Button("Send")) {
           try {
             *client << std::string(message);
@@ -451,15 +469,17 @@ int main(int, char **) {
           }
         }
         ImGui::Separator();
-        if (ImGui::Button("Receive")) {
-          try {
-            std::string received;
-            *client >> received;
-            std::println(std::cout, "Received: {}", received);
-          } catch (const std::exception &e) {
-            std::println(std::cerr, "Receive failed: {}\n", e.what());
-          }
+
+        try {
+          std::string received;
+          *client >> received;
+          total_received += received;
+          // std::println(std::cout, "Received: {}", received);
+        } catch (const std::exception &e) {
+
+          std::println(std::cerr, "Receive failed: {}\n", e.what());
         }
+        ImGui::TextWrapped("%s", total_received.c_str());
       }
       ImGui::End();
     }
