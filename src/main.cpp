@@ -465,6 +465,7 @@ int main(int, char **) {
             *client << std::string(message);
             std::println(std::cout, "Sent: {}", message);
           } catch (const std::exception &e) {
+            client.reset(nullptr);
             std::println(std::cerr, "Send failed: {}\n", e.what());
           }
         }
@@ -476,7 +477,7 @@ int main(int, char **) {
           total_received += received;
           // std::println(std::cout, "Received: {}", received);
         } catch (const std::exception &e) {
-
+          client.reset(nullptr);
           std::println(std::cerr, "Receive failed: {}\n", e.what());
         }
         ImGui::TextWrapped("%s", total_received.c_str());
