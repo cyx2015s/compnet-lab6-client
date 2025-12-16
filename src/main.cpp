@@ -2,8 +2,30 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <chrono>
+#include <iostream>
+#include <memory>
+#include <print>
 #include <stdio.h>
 #include <thread>
+
+#include <algorithm>
+#include <arpa/inet.h>
+#include <asm-generic/socket.h>
+#include <cerrno>
+#include <csignal>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <stdexcept>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <thread>
+#include <unistd.h>
+#include <vector>
+
 #define GL_SILENCE_DEPRECATION
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 #include <GLES2/gl2.h>
@@ -23,6 +45,177 @@ void limitFPS(int targetFPS) {
     std::this_thread::sleep_for(frameDuration - elapsed);
   }
   lastFrameTime = std::chrono::steady_clock::now();
+}
+
+constexpr int PORT = 10829;
+constexpr int MAX_CONNECTIONS = 20;
+constexpr size_t BUFFER_SIZE = 2048;
+
+void set_to_non_blocking(int socket_fd) {
+  int flags = fcntl(socket_fd, F_GETFL, 0);
+  if (flags < 0) {
+    perror("fcntl");
+    throw std::runtime_error("Getting socket flags failed");
+  }
+  if (fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+    perror("fcntl");
+    throw std::runtime_error("Setting non-blocking mode failed");
+  }
+}
+
+class TcpStream {
+  int socket_fd;
+  sockaddr peer_addr;
+
+public:
+  TcpStream(int socket_fd, sockaddr_in addr)
+      : socket_fd(socket_fd), peer_addr(*(sockaddr *)&addr) {}
+
+  TcpStream(sockaddr_in addr) : peer_addr(*(sockaddr *)&addr) {
+    socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_fd < 0) {
+      perror("socket");
+      throw std::runtime_error("Socket creation failed");
+    }
+    if (connect(socket_fd, (sockaddr *)&addr, sizeof(addr)) < 0) {
+      perror("connect");
+      close(socket_fd);
+      throw std::runtime_error("Connection failed");
+    }
+    set_to_non_blocking(socket_fd);
+  }
+  TcpStream(const TcpStream &) = delete;
+  TcpStream &operator=(const TcpStream &) = delete;
+  TcpStream(TcpStream &&other) noexcept
+      : socket_fd(other.socket_fd), peer_addr(other.peer_addr) {
+    other.socket_fd = -1;
+  }
+  TcpStream &operator=(TcpStream &&other) noexcept {
+    if (this != &other) {
+      close(socket_fd);
+      socket_fd = other.socket_fd;
+      peer_addr = other.peer_addr;
+      other.socket_fd = -1;
+    }
+    return *this;
+  }
+
+  ~TcpStream() { close(socket_fd); }
+
+  std::vector<char> read(size_t size) {
+    std::vector<char> buffer(size);
+    ssize_t bytesRead = recv(socket_fd, buffer.data(), size, 0);
+    if (bytesRead < 0 && bytesRead != EWOULDBLOCK) {
+      perror("recv");
+      throw std::runtime_error("Read failed");
+    }
+    bytesRead = std::max(bytesRead, 0l);
+    buffer.resize(bytesRead);
+    return buffer;
+  }
+  void write(const std::vector<char> &data) {
+    ssize_t bytesSent = send(socket_fd, data.data(), data.size(), 0);
+    if (bytesSent < 0) {
+      perror("send");
+      throw std::runtime_error("Write failed");
+    }
+  }
+
+  friend TcpStream &operator<<(TcpStream &stream, const std::string &data) {
+    stream.write(std::vector<char>(data.begin(), data.end()));
+    return stream;
+  }
+
+  friend TcpStream &operator>>(TcpStream &stream, std::string &data) {
+    auto buffer = stream.read(BUFFER_SIZE);
+    data = std::string(buffer.begin(), buffer.end());
+    return stream;
+  }
+
+  friend TcpStream &operator<<(TcpStream &stream, uint64_t number) {
+    uint64_t net_number = htobe64(number);
+    stream.write(std::vector<char>(reinterpret_cast<char *>(&net_number),
+                                   reinterpret_cast<char *>(&net_number) +
+                                       sizeof(net_number)));
+    return stream;
+  }
+
+  friend TcpStream &operator>>(TcpStream &stream, uint64_t &number) {
+    auto buffer = stream.read(sizeof(uint64_t));
+    if (buffer.size() != sizeof(uint64_t)) {
+      throw std::runtime_error("Failed to read uint64_t");
+    }
+    uint64_t net_number;
+    std::memcpy(&net_number, buffer.data(), sizeof(uint64_t));
+    number = be64toh(net_number);
+    return stream;
+  }
+
+  auto get_peer_addr() const { return peer_addr; }
+};
+
+class TcpListener {
+  int socket_fd;
+
+public:
+  TcpListener() {
+    socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_fd < 0) {
+      throw std::runtime_error("Socket creation failed");
+    }
+    int opt = 1;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) <
+        0) {
+      perror("setsockopt");
+      close(socket_fd);
+      throw std::runtime_error("Setting socket options failed");
+    }
+    sockaddr_in addr{
+        .sin_family = AF_INET,
+        .sin_port = htons(PORT),
+        .sin_addr = {.s_addr = INADDR_ANY},
+    };
+    if (::bind(socket_fd, (sockaddr *)&addr, sizeof(addr)) < 0) {
+      close(socket_fd);
+      perror("bind");
+      throw std::runtime_error("Binding failed");
+    }
+    if (listen(socket_fd, MAX_CONNECTIONS) < 0) {
+      close(socket_fd);
+      perror("listen");
+      throw std::runtime_error("Listening failed");
+    }
+  }
+
+  ~TcpListener() { close(socket_fd); }
+  TcpListener(const TcpListener &) = delete;
+  TcpListener &operator=(const TcpListener &) = delete;
+  TcpListener(TcpListener &&other) noexcept : socket_fd(other.socket_fd) {
+    other.socket_fd = -1;
+  }
+  TcpListener &operator=(TcpListener &&other) noexcept {
+    if (this != &other) {
+      close(socket_fd);
+      socket_fd = other.socket_fd;
+      other.socket_fd = -1;
+    }
+    return *this;
+  }
+  TcpStream accept() {
+    sockaddr_in client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    int client_socket =
+        ::accept(socket_fd, (sockaddr *)&client_addr, &client_len);
+    if (client_socket < 0) {
+      perror("accept");
+      throw std::runtime_error("Accepting connection failed");
+    }
+    return TcpStream(client_socket, client_addr);
+  }
+};
+
+std::vector<char> as_bytes(const std::string &str) {
+  return std::vector<char>(str.begin(), str.end());
 }
 
 // Main code
@@ -160,52 +353,114 @@ int main(int, char **) {
     // 1. Show the big demo window (Most of the sample code is in
     // ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear
     // ImGui!).
-    if (show_demo_window)
-      ImGui::ShowDemoWindow(&show_demo_window);
+    // if (show_demo_window)
+    //   ImGui::ShowDemoWindow(&show_demo_window);
 
     // 2. Show a simple window that we create ourselves. We use a Begin/End pair
     // to create a named window.
-    {
-      static float f = 0.0f;
-      static int counter = 0;
+    // {
+    //   static float f = 0.0f;
+    //   static int counter = 0;
 
-      ImGui::Begin("Hello, world!"); // Create a window called "Hello, world!"
-                                     // and append into it.
+    //   ImGui::Begin("Hello, world!"); // Create a window called "Hello,
+    //   world!"
+    //                                  // and append into it.
 
-      ImGui::Text("This is some useful text."); // Display some text (you can
-                                                // use a format strings too)
-      ImGui::Checkbox(
-          "Demo Window",
-          &show_demo_window); // Edit bools storing our window open/close state
-      ImGui::Checkbox("Another Window", &show_another_window);
+    //   ImGui::Text("This is some useful text."); // Display some text (you can
+    //                                             // use a format strings too)
+    //   ImGui::Checkbox(
+    //       "Demo Window",
+    //       &show_demo_window); // Edit bools storing our window open/close
+    //       state
+    //   ImGui::Checkbox("Another Window", &show_another_window);
 
-      ImGui::SliderFloat("float", &f, 0.0f,
-                         1.0f); // Edit 1 float using a slider from 0.0f to 1.0f
-      ImGui::ColorEdit3(
-          "clear color",
-          (float *)&clear_color); // Edit 3 floats representing a color
+    //   ImGui::SliderFloat("float", &f, 0.0f,
+    //                      1.0f); // Edit 1 float using a slider from 0.0f
+    //                      to 1.0f
+    //   ImGui::ColorEdit3(
+    //       "clear color",
+    //       (float *)&clear_color); // Edit 3 floats representing a color
 
-      if (ImGui::Button("Button")) // Buttons return true when clicked (most
-                                   // widgets return true when edited/activated)
-        counter++;
-      ImGui::SameLine();
-      ImGui::Text("counter = %d", counter);
+    //   if (ImGui::Button("Button")) // Buttons return true when clicked (most
+    //                                // widgets return true when
+    //                                edited/activated)
+    //     counter++;
+    //   ImGui::SameLine();
+    //   ImGui::Text("counter = %d", counter);
 
-      ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
-                  1000.0f / io.Framerate, io.Framerate);
-      ImGui::End();
-    }
+    //   ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
+    //               1000.0f / io.Framerate, io.Framerate);
+    //   ImGui::End();
+    // }
 
     // 3. Show another simple window.
-    if (show_another_window) {
-      ImGui::Begin(
-          "Another Window",
-          &show_another_window); // Pass a pointer to our bool variable (the
-                                 // window will have a closing button that will
-                                 // clear the bool when clicked)
-      ImGui::Text("Hello from another window!");
-      if (ImGui::Button("Close Me"))
-        show_another_window = false;
+    // if (show_another_window) {
+    //   ImGui::Begin(
+    //       "Another Window",
+    //       &show_another_window); // Pass a pointer to our bool variable (the
+    //                              // window will have a closing button that
+    //                              will
+    //                              // clear the bool when clicked)
+    //   ImGui::Text("Hello from another window!");
+    //   if (ImGui::Button("Close Me"))
+    //     show_another_window = false;
+    //   ImGui::End();
+    // }
+
+    // Client UI
+    {
+      static std::unique_ptr<TcpStream> client;
+      ImGui::Begin("Client Panel");
+      static char server_ip[64] = "127.0.0.1";
+      static char server_port[8] = "10829";
+      ImGui::InputText("Server IP", server_ip, sizeof(server_ip));
+      ImGui::InputText("Server Port", server_port, sizeof(server_port));
+      if (ImGui::Button("Connect")) {
+        try {
+          sockaddr_in server_addr{
+              .sin_family = AF_INET,
+              .sin_port = htons(static_cast<uint16_t>(atoi(server_port))),
+              .sin_addr = {.s_addr = inet_addr(server_ip)},
+          };
+          client = std::make_unique<TcpStream>(server_addr);
+          std::println(std::cout, "Connected to server {}:{}", server_ip,
+                       server_port);
+        } catch (const std::exception &e) {
+          std::println(std::cerr, "Connection failed: {}\n", e.what());
+          client.reset(nullptr);
+        }
+      }
+      if (client != nullptr) {
+        auto peer_addr = client->get_peer_addr();
+        auto peer_ipv4 =
+            inet_ntoa(reinterpret_cast<sockaddr_in *>(&peer_addr)->sin_addr);
+        auto peer_port =
+            ntohs(reinterpret_cast<sockaddr_in *>(&peer_addr)->sin_port);
+        ImGui::Text("Connected to server %s:%d", peer_ipv4, peer_port);
+      }
+      ImGui::Separator();
+      if (client != nullptr) {
+        static char message[1024] = "Hello, Server!";
+        ImGui::InputText("Message", message, sizeof(message));
+        if (ImGui::Button("Send")) {
+          try {
+            *client << std::string(message);
+            std::println(std::cout, "Sent: {}", message);
+          } catch (const std::exception &e) {
+            std::println(std::cerr, "Send failed: {}\n", e.what());
+          }
+        }
+        ImGui::Separator();
+        if (ImGui::Button("Receive")) {
+          try {
+            std::string received;
+            *client >> received;
+            std::println(std::cout, "Received: {}", received);
+          } catch (const std::exception &e) {
+            std::println(std::cerr, "Receive failed: {}\n", e.what());
+          }
+        }
+      }
       ImGui::End();
     }
 
@@ -240,6 +495,7 @@ int main(int, char **) {
 #endif
 
   // Cleanup
+
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
