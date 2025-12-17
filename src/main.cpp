@@ -482,6 +482,28 @@ int main(int, char **) {
         }
         ImGui::TextWrapped("%s", total_received.c_str());
       }
+      
+      if (client != nullptr && ImGui::Button("Disconnect")) {
+        client.reset(nullptr);
+        std::println(std::cout, "Disconnected from server.");
+      }
+
+      if (client != nullptr && ImGui::Button("Get Time")) {
+        // TODO
+      }
+
+      if (client != nullptr && ImGui::Button("Get Name")) {
+        // TODO
+      }
+
+      if (client != nullptr && ImGui::Button("Get Active Connections")) {
+        // TODO
+      }
+
+      if (ImGui::Button("Exit")) {
+        client.reset(nullptr);
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+      }
       ImGui::End();
     }
 
