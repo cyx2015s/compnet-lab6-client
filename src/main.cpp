@@ -1,7 +1,9 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include <X11/extensions/randr.h>
 #include <chrono>
+#include <format>
 #include <iostream>
 #include <memory>
 #include <print>
@@ -231,6 +233,12 @@ public:
   }
 };
 
+struct Connections {
+  sockaddr_in addr;
+  std::string get_ip() const { return std::string(inet_ntoa(addr.sin_addr)); }
+  std::string get_port() const { return std::to_string(ntohs(addr.sin_port)); }
+};
+
 std::vector<char> as_bytes(const std::string &str) {
   return std::vector<char>(str.begin(), str.end());
 }
@@ -428,6 +436,18 @@ int main(int, char **) {
     {
       static std::unique_ptr<TcpStream> client;
       static std::string total_received;
+      static std::vector<Connections> connections = {
+          {.addr = {.sin_family = AF_INET,
+                    .sin_port = htons(10829),
+                    .sin_addr = {.s_addr = inet_addr("114.115.116.1")}}},
+          {.addr = {.sin_family = AF_INET,
+                    .sin_port = htons(10829),
+                    .sin_addr = {.s_addr = inet_addr("114.115.116.2")}}},
+          {.addr = {.sin_family = AF_INET,
+                    .sin_port = htons(10829),
+                    .sin_addr = {.s_addr = inet_addr("114.115.116.3")}}},
+      };
+      static int selected_conn_index = -1;
       ImGui::Begin("Client Panel");
       static char server_ip[64] = "127.0.0.1";
       static char server_port[8] = "10829";
@@ -472,6 +492,7 @@ int main(int, char **) {
         ImGui::Separator();
 
         try {
+          // TODO: parse server responses
           std::string received;
           *client >> received;
           total_received += received;
@@ -480,24 +501,39 @@ int main(int, char **) {
           client.reset(nullptr);
           std::println(std::cerr, "Receive failed: {}\n", e.what());
         }
-        ImGui::TextWrapped("%s", total_received.c_str());
       }
-      
+      ImGui::End();
+      ImGui::Begin("Server messages");
+      ImGui::TextWrapped("%s", total_received.c_str());
+      ImGui::End();
+      ImGui::Begin("Action Panel");
+
       if (client != nullptr && ImGui::Button("Disconnect")) {
         client.reset(nullptr);
         std::println(std::cout, "Disconnected from server.");
       }
 
       if (client != nullptr && ImGui::Button("Get Time")) {
-        // TODO
+        // TODO: send time request
       }
 
       if (client != nullptr && ImGui::Button("Get Name")) {
-        // TODO
+        // TODO: send name request
       }
 
+      ImGui::Separator();
       if (client != nullptr && ImGui::Button("Get Active Connections")) {
-        // TODO
+        // TODO: send active connections request
+      }
+      if (ImGui::BeginListBox("Active Connections")) {
+        for (const auto &conn : connections) {
+          if (ImGui::Selectable(
+                  std::format("{}:{}", conn.get_ip(), conn.get_port()).c_str(),
+                  selected_conn_index == &conn - &connections[0])) {
+            selected_conn_index = &conn - &connections[0];
+          }
+        }
+        ImGui::EndListBox();
       }
 
       if (ImGui::Button("Exit")) {
