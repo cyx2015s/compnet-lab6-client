@@ -2,26 +2,27 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <X11/extensions/randr.h>
-#include <chrono>
-#include <format>
-#include <iostream>
-#include <memory>
-#include <print>
-#include <stdio.h>
-#include <thread>
-
 #include <algorithm>
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <endian.h>
 #include <fcntl.h>
+#include <format>
+#include <iostream>
+#include <memory>
 #include <netinet/in.h>
+#include <optional>
+#include <print>
 #include <stdexcept>
+#include <stdio.h>
+#include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <thread>
@@ -115,11 +116,15 @@ public:
   ~TcpStream() { close(socket_fd); }
 
   std::vector<char> read(size_t size) {
+
     std::vector<char> buffer(size);
     ssize_t bytesRead = recv(socket_fd, buffer.data(), size, 0);
     if (bytesRead < 0 && errno != EWOULDBLOCK) {
       perror("recv");
       throw std::runtime_error("Read failed");
+    }
+    if (bytesRead == 0) {
+      throw std::runtime_error("Connection closed by peer");
     }
     bytesRead = std::max(bytesRead, 0l);
     buffer.resize(bytesRead);
@@ -134,6 +139,7 @@ public:
         perror("send");
         throw std::runtime_error("Write failed");
       }
+
       offset += bytesSent;
       bytesSent =
           send(socket_fd, data.data() + offset, data.size() - offset, 0);
@@ -234,6 +240,7 @@ public:
 };
 
 struct Connections {
+  uint32_t client_id;
   sockaddr_in addr;
   std::string get_ip() const { return std::string(inet_ntoa(addr.sin_addr)); }
   std::string get_port() const { return std::to_string(ntohs(addr.sin_port)); }
@@ -241,6 +248,109 @@ struct Connections {
 
 std::vector<char> as_bytes(const std::string &str) {
   return std::vector<char>(str.begin(), str.end());
+}
+
+enum class MessageType : uint8_t {
+  TIME_REQUEST = 0x01,
+  NAME_REQUEST = 0x02,
+  ACTIVE_CONNECTIONS_REQUEST = 0x03,
+  SEND_MESSAGE = 0x04,
+  TIME_RESPONSE = 0x81,
+  NAME_RESPONSE = 0x82,
+  ACTIVE_CONNECTIONS_RESPONSE = 0x83,
+  FORWARD_MESSAGE = 0x84
+};
+
+struct ReceivedMessage {
+  MessageType type;
+  uint8_t flags;
+  std::vector<char> payload;
+};
+
+std::optional<ReceivedMessage> try_parse_message(std::vector<char> &data) {
+  if (data.size() < 4) {
+    return std::nullopt;
+  }
+  ReceivedMessage message;
+  message.type = static_cast<MessageType>(data[0]);
+  if (data[0] != static_cast<char>(message.type)) {
+    // 别读了，整个流都脏了
+    data.clear();
+    return std::nullopt;
+  }
+  message.flags = data[1];
+  uint16_t payload_length =
+      (static_cast<uint8_t>(data[2]) << 8) | static_cast<uint8_t>(data[3]);
+  if (data.size() < 4 + payload_length) {
+    return std::nullopt;
+  }
+  message.payload =
+      std::vector<char>(data.begin() + 4, data.begin() + 4 + payload_length);
+  data.erase(data.begin(), data.begin() + 4 + payload_length);
+  return message;
+}
+
+std::string interpret_message(const ReceivedMessage &message) {
+  switch (message.type) {
+  case MessageType::TIME_RESPONSE:
+    return "Server Time Stamp: " +
+           std::to_string(static_cast<uint64_t>(*message.payload.begin()));
+  case MessageType::NAME_RESPONSE: {
+    uint16_t name_length = be16toh(
+        static_cast<uint16_t>((static_cast<uint8_t>(message.payload[0]) << 8) |
+                              static_cast<uint8_t>(message.payload[1])));
+    return "Server Name: " +
+           std::string(message.payload.begin() + 2,
+                       message.payload.begin() + 2 + name_length);
+  }
+  case MessageType::ACTIVE_CONNECTIONS_RESPONSE: {
+    uint16_t conn_count = be16toh(
+        static_cast<uint16_t>((static_cast<uint8_t>(message.payload[0]) << 8) |
+                              static_cast<uint8_t>(message.payload[1])));
+    size_t off = 2;
+    int i = 0;
+
+    std::stringstream ss;
+    while (i < conn_count) {
+      uint32_t id = be32toh(static_cast<uint32_t>(
+          (static_cast<uint8_t>(message.payload[off]) << 24) |
+          (static_cast<uint8_t>(message.payload[off + 1]) << 16) |
+          (static_cast<uint8_t>(message.payload[off + 2]) << 8) |
+          static_cast<uint8_t>(message.payload[off + 3])));
+      off += 4;
+      uint32_t ip = be32toh(static_cast<uint32_t>(
+          (static_cast<uint8_t>(message.payload[off]) << 24) |
+          (static_cast<uint8_t>(message.payload[off + 1]) << 16) |
+          (static_cast<uint8_t>(message.payload[off + 2]) << 8) |
+          static_cast<uint8_t>(message.payload[off + 3])));
+      off += 4;
+      uint16_t port = be16toh(static_cast<uint16_t>(
+          (static_cast<uint8_t>(message.payload[off]) << 8) |
+          static_cast<uint8_t>(message.payload[off + 1])));
+      off += 2;
+      std::println(ss, "Connection {}: {}:{}", id, inet_ntoa(*(in_addr *)&ip),
+                   port);
+      i++;
+    }
+    return ss.str();
+  }
+  case MessageType::FORWARD_MESSAGE: {
+    uint32_t sender_id = be32toh(
+        static_cast<uint32_t>((static_cast<uint8_t>(message.payload[0]) << 24) |
+                              (static_cast<uint8_t>(message.payload[1]) << 16) |
+                              (static_cast<uint8_t>(message.payload[2]) << 8) |
+                              static_cast<uint8_t>(message.payload[3])));
+    uint16_t msg_length = be16toh(
+        static_cast<uint16_t>((static_cast<uint8_t>(message.payload[4]) << 8) |
+                              static_cast<uint8_t>(message.payload[5])));
+    std::string msg_content(message.payload.begin() + 6,
+                            message.payload.begin() + 6 + msg_length);
+    return std::format("Message from {}: {}", sender_id, msg_content);
+  }
+  default: {
+    return "Unknown message type";
+  }
+  }
 }
 
 // Main code
@@ -435,15 +545,19 @@ int main(int, char **) {
     // Client UI
     {
       static std::unique_ptr<TcpStream> client;
-      static std::string total_received;
+      static std::vector<char> total_received;
+      static std::vector<ReceivedMessage> parsed_messages;
       static std::vector<Connections> connections = {
-          {.addr = {.sin_family = AF_INET,
+          {.client_id = 1,
+           .addr = {.sin_family = AF_INET,
                     .sin_port = htons(10829),
                     .sin_addr = {.s_addr = inet_addr("114.115.116.1")}}},
-          {.addr = {.sin_family = AF_INET,
+          {.client_id = 2,
+           .addr = {.sin_family = AF_INET,
                     .sin_port = htons(10829),
                     .sin_addr = {.s_addr = inet_addr("114.115.116.2")}}},
-          {.addr = {.sin_family = AF_INET,
+          {.client_id = 3,
+           .addr = {.sin_family = AF_INET,
                     .sin_port = htons(10829),
                     .sin_addr = {.s_addr = inet_addr("114.115.116.3")}}},
       };
@@ -492,11 +606,53 @@ int main(int, char **) {
         ImGui::Separator();
 
         try {
-          // TODO: parse server responses
-          std::string received;
-          *client >> received;
-          total_received += received;
-          // std::println(std::cout, "Received: {}", received);
+          auto bytes = client->read(BUFFER_SIZE);
+          total_received.insert(total_received.end(), bytes.begin(),
+                                bytes.end());
+          auto packet = try_parse_message(total_received);
+          if (packet.has_value()) {
+            if (packet.value().type ==
+                MessageType::ACTIVE_CONNECTIONS_RESPONSE) {
+              connections.clear();
+              uint16_t conn_count = be16toh(static_cast<uint16_t>(
+                  (static_cast<uint8_t>(packet.value().payload[0]) << 8) |
+                  static_cast<uint8_t>(packet.value().payload[1])));
+              size_t off = 2;
+              int i = 0;
+              while (i < conn_count) {
+                uint32_t id = be32toh(static_cast<uint32_t>(
+                    (static_cast<uint8_t>(packet.value().payload[off]) << 24) |
+                    (static_cast<uint8_t>(packet.value().payload[off + 1])
+                     << 16) |
+                    (static_cast<uint8_t>(packet.value().payload[off + 2])
+                     << 8) |
+                    static_cast<uint8_t>(packet.value().payload[off + 3])));
+                off += 4;
+                uint32_t ip = be32toh(static_cast<uint32_t>(
+                    (static_cast<uint8_t>(packet.value().payload[off]) << 24) |
+                    (static_cast<uint8_t>(packet.value().payload[off + 1])
+                     << 16) |
+                    (static_cast<uint8_t>(packet.value().payload[off + 2])
+                     << 8) |
+                    static_cast<uint8_t>(packet.value().payload[off + 3])));
+                off += 4;
+                uint16_t port = be16toh(static_cast<uint16_t>(
+                    (static_cast<uint8_t>(packet.value().payload[off]) << 8) |
+                    static_cast<uint8_t>(packet.value().payload[off + 1])));
+                off += 2;
+                Connections conn;
+                conn.client_id = id;
+                conn.addr.sin_family = AF_INET;
+                conn.addr.sin_addr.s_addr = ip;
+                conn.addr.sin_port = htons(port);
+                connections.push_back(conn);
+                i++;
+              }
+            }
+            auto interpreted = interpret_message(packet.value());
+            std::println(std::cout, "Received: {}", interpreted);
+            parsed_messages.push_back(packet.value());
+          }
         } catch (const std::exception &e) {
           client.reset(nullptr);
           std::println(std::cerr, "Receive failed: {}\n", e.what());
@@ -504,7 +660,7 @@ int main(int, char **) {
       }
       ImGui::End();
       ImGui::Begin("Server messages");
-      ImGui::TextWrapped("%s", total_received.c_str());
+      ImGui::TextWrapped("%s", total_received.data());
       ImGui::End();
       ImGui::Begin("Action Panel");
 
@@ -514,22 +670,31 @@ int main(int, char **) {
       }
 
       if (client != nullptr && ImGui::Button("Get Time")) {
-        // TODO: send time request
+        std::vector<char> packet{static_cast<char>(MessageType::TIME_REQUEST),
+                                 0x00, 0x00, 0x00};
+        client->write(packet);
       }
 
       if (client != nullptr && ImGui::Button("Get Name")) {
-        // TODO: send name request
+        std::vector<char> packet{static_cast<char>(MessageType::NAME_REQUEST),
+                                 0x00, 0x00, 0x00};
+        client->write(packet);
       }
 
       ImGui::Separator();
       if (client != nullptr && ImGui::Button("Get Active Connections")) {
-        // TODO: send active connections request
+        std::vector<char> packet{
+            static_cast<char>(MessageType::ACTIVE_CONNECTIONS_REQUEST), 0x00,
+            0x00, 0x00};
+        client->write(packet);
       }
       if (ImGui::BeginListBox("Active Connections")) {
         for (const auto &conn : connections) {
-          if (ImGui::Selectable(
-                  std::format("{}:{}", conn.get_ip(), conn.get_port()).c_str(),
-                  selected_conn_index == &conn - &connections[0])) {
+          if (ImGui::Selectable(std::format("[{}]{}:{}", conn.client_id,
+                                            conn.get_ip(), conn.get_port())
+                                    .c_str(),
+                                selected_conn_index ==
+                                    &conn - &connections[0])) {
             selected_conn_index = &conn - &connections[0];
           }
         }

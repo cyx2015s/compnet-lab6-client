@@ -31,9 +31,11 @@ class PortListener:
                         message = data.decode('utf-8').strip()
                         print(f"[{client_address[0]}:{client_address[1]}] 消息: {message}")
                     except UnicodeDecodeError:
+                        pass
                         # 如果是二进制数据，显示十六进制
-                        hex_data = data.hex()
-                        print(f"[{client_address[0]}:{client_address[1]}] 二进制数据 ({len(data)} 字节): {hex_data}")
+                    
+                    hex_data = data.hex()
+                    print(f"[{client_address[0]}:{client_address[1]}] 二进制数据 ({len(data)} 字节): {hex_data}")
                     
                 except socket.timeout:
                     client_socket.sendall('还回家吃饭吗？\n'.encode('utf-8'))
