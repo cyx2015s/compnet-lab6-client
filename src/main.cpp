@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <endian.h>
 #include <fcntl.h>
@@ -275,80 +276,90 @@ std::optional<ReceivedMessage> try_parse_message(std::vector<char> &data) {
   message.type = static_cast<MessageType>(data[0]);
   if (data[0] != static_cast<char>(message.type)) {
     // 别读了，整个流都脏了
+    std::println(std::cerr, "消息类型无效，清空接收缓冲区");
     data.clear();
     return std::nullopt;
   }
   message.flags = data[1];
   uint16_t payload_length =
       (static_cast<uint8_t>(data[2]) << 8) | static_cast<uint8_t>(data[3]);
+  std::println(std::cout, "尝试解析消息: 类型 = {}, 标志 = {}, 负载长度 = {}",
+               static_cast<uint8_t>(message.type), message.flags,
+               payload_length);
   if (data.size() < 4 + payload_length) {
     return std::nullopt;
   }
   message.payload =
       std::vector<char>(data.begin() + 4, data.begin() + 4 + payload_length);
+  std::println("删除了 {} 字节数据，剩余 {}", 4 + payload_length,
+               data.size() - (4 + payload_length));
   data.erase(data.begin(), data.begin() + 4 + payload_length);
+  std::println(std::cout, "成功解析消息: 类型 = {}, 标志 = {}, 负载长度 = {}",
+               static_cast<uint8_t>(message.type), message.flags,
+               payload_length);
   return message;
 }
 
 std::string interpret_message(const ReceivedMessage &message) {
   switch (message.type) {
   case MessageType::TIME_RESPONSE:
-    return "Server Time Stamp: " +
+    return "服务器时间戳: " +
            std::to_string(static_cast<uint64_t>(*message.payload.begin()));
   case MessageType::NAME_RESPONSE: {
-    uint16_t name_length = be16toh(
+    uint16_t name_length =
         static_cast<uint16_t>((static_cast<uint8_t>(message.payload[0]) << 8) |
-                              static_cast<uint8_t>(message.payload[1])));
-    return "Server Name: " +
+                              static_cast<uint8_t>(message.payload[1]));
+
+    return "服务器名称：" +
            std::string(message.payload.begin() + 2,
                        message.payload.begin() + 2 + name_length);
   }
   case MessageType::ACTIVE_CONNECTIONS_RESPONSE: {
-    uint16_t conn_count = be16toh(
+    uint16_t conn_count = 
         static_cast<uint16_t>((static_cast<uint8_t>(message.payload[0]) << 8) |
-                              static_cast<uint8_t>(message.payload[1])));
+                              static_cast<uint8_t>(message.payload[1]));
     size_t off = 2;
     int i = 0;
 
     std::stringstream ss;
     while (i < conn_count) {
-      uint32_t id = be32toh(static_cast<uint32_t>(
+      uint32_t id = (static_cast<uint32_t>(
           (static_cast<uint8_t>(message.payload[off]) << 24) |
           (static_cast<uint8_t>(message.payload[off + 1]) << 16) |
           (static_cast<uint8_t>(message.payload[off + 2]) << 8) |
           static_cast<uint8_t>(message.payload[off + 3])));
       off += 4;
-      uint32_t ip = be32toh(static_cast<uint32_t>(
+      uint32_t ip = (static_cast<uint32_t>(
           (static_cast<uint8_t>(message.payload[off]) << 24) |
           (static_cast<uint8_t>(message.payload[off + 1]) << 16) |
           (static_cast<uint8_t>(message.payload[off + 2]) << 8) |
           static_cast<uint8_t>(message.payload[off + 3])));
       off += 4;
-      uint16_t port = be16toh(static_cast<uint16_t>(
+      uint16_t port = (static_cast<uint16_t>(
           (static_cast<uint8_t>(message.payload[off]) << 8) |
           static_cast<uint8_t>(message.payload[off + 1])));
       off += 2;
-      std::println(ss, "Connection {}: {}:{}", id, inet_ntoa(*(in_addr *)&ip),
+      std::println(ss, "连接 ID = {}: {}:{}", id, inet_ntoa(*(in_addr *)&ip),
                    port);
       i++;
     }
     return ss.str();
   }
   case MessageType::FORWARD_MESSAGE: {
-    uint32_t sender_id = be32toh(
+    uint32_t sender_id =
         static_cast<uint32_t>((static_cast<uint8_t>(message.payload[0]) << 24) |
                               (static_cast<uint8_t>(message.payload[1]) << 16) |
                               (static_cast<uint8_t>(message.payload[2]) << 8) |
-                              static_cast<uint8_t>(message.payload[3])));
-    uint16_t msg_length = be16toh(
+                              static_cast<uint8_t>(message.payload[3]));
+    uint16_t msg_length =
         static_cast<uint16_t>((static_cast<uint8_t>(message.payload[4]) << 8) |
-                              static_cast<uint8_t>(message.payload[5])));
+                              static_cast<uint8_t>(message.payload[5]));
     std::string msg_content(message.payload.begin() + 6,
                             message.payload.begin() + 6 + msg_length);
-    return std::format("Message from {}: {}", sender_id, msg_content);
+    return std::format("来自客户端 {} 的消息: {}", sender_id, msg_content);
   }
   default: {
-    return "Unknown message type";
+    return "未知消息类型";
   }
   }
 }
@@ -562,12 +573,12 @@ int main(int, char **) {
                     .sin_addr = {.s_addr = inet_addr("114.115.116.3")}}},
       };
       static int selected_conn_index = -1;
-      ImGui::Begin("Client Panel");
+      ImGui::Begin("客户端-服务器面板");
       static char server_ip[64] = "127.0.0.1";
       static char server_port[8] = "10829";
-      ImGui::InputText("Server IP", server_ip, sizeof(server_ip));
-      ImGui::InputText("Server Port", server_port, sizeof(server_port));
-      if (ImGui::Button("Connect")) {
+      ImGui::InputText("服务器 IPv4 地址", server_ip, sizeof(server_ip));
+      ImGui::InputText("服务器端口", server_port, sizeof(server_port));
+      if (ImGui::Button("连接")) {
         try {
           sockaddr_in server_addr{
               .sin_family = AF_INET,
@@ -578,7 +589,7 @@ int main(int, char **) {
           std::println(std::cout, "Connected to server {}:{}", server_ip,
                        server_port);
         } catch (const std::exception &e) {
-          std::println(std::cerr, "Connection failed: {}\n", e.what());
+          std::println(std::cerr, "连接失败: {}\n", e.what());
           client.reset(nullptr);
         }
       }
@@ -588,57 +599,64 @@ int main(int, char **) {
             inet_ntoa(reinterpret_cast<sockaddr_in *>(&peer_addr)->sin_addr);
         auto peer_port =
             ntohs(reinterpret_cast<sockaddr_in *>(&peer_addr)->sin_port);
-        ImGui::Text("Connected to server %s:%d", peer_ipv4, peer_port);
+        ImGui::Text("连接到服务器 %s:%d", peer_ipv4, peer_port);
       }
       ImGui::Separator();
       if (client != nullptr) {
-        static char message[1024] = "Hello, Server!";
-        ImGui::InputTextMultiline("Message", message, sizeof(message));
-        if (ImGui::Button("Send")) {
+        static char message[1024] = "你好, 服务器!";
+        ImGui::InputTextMultiline("消息", message, sizeof(message));
+        if (ImGui::Button("发送")) {
           try {
             *client << std::string(message);
-            std::println(std::cout, "Sent: {}", message);
+            std::println(std::cout, "已发送: {}", message);
           } catch (const std::exception &e) {
             client.reset(nullptr);
-            std::println(std::cerr, "Send failed: {}\n", e.what());
+            std::println(std::cerr, "发送失败: {}\n", e.what());
           }
         }
         ImGui::Separator();
 
         try {
           auto bytes = client->read(BUFFER_SIZE);
+          if (!bytes.empty()) {
+            std::println(std::cout, "接收 {} 字节数据", bytes.size());
+          }
           total_received.insert(total_received.end(), bytes.begin(),
                                 bytes.end());
           auto packet = try_parse_message(total_received);
           if (packet.has_value()) {
+            std::println(std::cout,
+                         "收到消息: 类型 = {}, 标志 = {}, 负载长度 = {}",
+                         static_cast<uint8_t>(packet.value().type),
+                         packet.value().flags, packet.value().payload.size());
             if (packet.value().type ==
                 MessageType::ACTIVE_CONNECTIONS_RESPONSE) {
               connections.clear();
-              uint16_t conn_count = be16toh(static_cast<uint16_t>(
+              uint16_t conn_count = (static_cast<uint16_t>(
                   (static_cast<uint8_t>(packet.value().payload[0]) << 8) |
                   static_cast<uint8_t>(packet.value().payload[1])));
               size_t off = 2;
               int i = 0;
               while (i < conn_count) {
-                uint32_t id = be32toh(static_cast<uint32_t>(
+                uint32_t id = static_cast<uint32_t>(
                     (static_cast<uint8_t>(packet.value().payload[off]) << 24) |
                     (static_cast<uint8_t>(packet.value().payload[off + 1])
                      << 16) |
                     (static_cast<uint8_t>(packet.value().payload[off + 2])
                      << 8) |
-                    static_cast<uint8_t>(packet.value().payload[off + 3])));
+                    static_cast<uint8_t>(packet.value().payload[off + 3]));
                 off += 4;
-                uint32_t ip = be32toh(static_cast<uint32_t>(
+                uint32_t ip = static_cast<uint32_t>(
                     (static_cast<uint8_t>(packet.value().payload[off]) << 24) |
                     (static_cast<uint8_t>(packet.value().payload[off + 1])
                      << 16) |
                     (static_cast<uint8_t>(packet.value().payload[off + 2])
                      << 8) |
-                    static_cast<uint8_t>(packet.value().payload[off + 3])));
+                    static_cast<uint8_t>(packet.value().payload[off + 3]));
                 off += 4;
-                uint16_t port = be16toh(static_cast<uint16_t>(
+                uint16_t port = static_cast<uint16_t>(
                     (static_cast<uint8_t>(packet.value().payload[off]) << 8) |
-                    static_cast<uint8_t>(packet.value().payload[off + 1])));
+                    static_cast<uint8_t>(packet.value().payload[off + 1]));
                 off += 2;
                 Connections conn;
                 conn.client_id = id;
@@ -650,45 +668,45 @@ int main(int, char **) {
               }
             }
             auto interpreted = interpret_message(packet.value());
-            std::println(std::cout, "Received: {}", interpreted);
+            std::println(std::cout, "解读消息: {}", interpreted);
             parsed_messages.push_back(packet.value());
           }
         } catch (const std::exception &e) {
           client.reset(nullptr);
-          std::println(std::cerr, "Receive failed: {}\n", e.what());
+          std::println(std::cerr, "接收失败: {}\n", e.what());
         }
       }
       ImGui::End();
       // ImGui::Begin("Server messages");
       // ImGui::TextWrapped("%s", total_received.data());
       // ImGui::End();
-      ImGui::Begin("Action Panel");
+      ImGui::Begin("操作面板");
 
-      if (client != nullptr && ImGui::Button("Disconnect")) {
+      if (client != nullptr && ImGui::Button("断开连接")) {
         client.reset(nullptr);
-        std::println(std::cout, "Disconnected from server.");
+        std::println(std::cout, "已断开与服务器的连接。");
       }
 
-      if (client != nullptr && ImGui::Button("Get Time")) {
+      if (client != nullptr && ImGui::Button("获取时间")) {
         std::vector<char> packet{static_cast<char>(MessageType::TIME_REQUEST),
                                  0x00, 0x00, 0x00};
         client->write(packet);
       }
 
-      if (client != nullptr && ImGui::Button("Get Name")) {
+      if (client != nullptr && ImGui::Button("获取名字")) {
         std::vector<char> packet{static_cast<char>(MessageType::NAME_REQUEST),
                                  0x00, 0x00, 0x00};
         client->write(packet);
       }
 
       ImGui::Separator();
-      if (client != nullptr && ImGui::Button("Get Active Connections")) {
+      if (client != nullptr && ImGui::Button("获取活跃连接")) {
         std::vector<char> packet{
             static_cast<char>(MessageType::ACTIVE_CONNECTIONS_REQUEST), 0x00,
             0x00, 0x00};
         client->write(packet);
       }
-      if (ImGui::BeginListBox("Active Connections")) {
+      if (ImGui::BeginListBox("活跃连接")) {
         for (const auto &conn : connections) {
           if (ImGui::Selectable(std::format("[{}]{}:{}", conn.client_id,
                                             conn.get_ip(), conn.get_port())
@@ -703,10 +721,9 @@ int main(int, char **) {
 
       if (selected_conn_index >= 0 &&
           selected_conn_index < static_cast<int>(connections.size())) {
-        static char fwd_message[1024] = "Hello from client!";
-        ImGui::InputTextMultiline("Forward Message", fwd_message,
-                                  sizeof(fwd_message));
-        if (ImGui::Button("Send to Selected")) {
+        static char fwd_message[1024] = "来自另一个客户端的问好！";
+        ImGui::InputTextMultiline("转发消息", fwd_message, sizeof(fwd_message));
+        if (ImGui::Button("发送到选中客户端")) {
           const auto &conn = connections[selected_conn_index];
           std::vector<char> payload;
           uint32_t net_id = htobe32(conn.client_id);
@@ -730,9 +747,16 @@ int main(int, char **) {
         }
       }
       ImGui::Separator();
-      if (ImGui::Button("Exit")) {
+      if (ImGui::Button("退出")) {
         client.reset(nullptr);
         glfwSetWindowShouldClose(window, GLFW_TRUE);
+      }
+      ImGui::End();
+
+      ImGui::Begin("收到的消息");
+      for (const auto &msg : parsed_messages) {
+        auto interpreted = interpret_message(msg);
+        ImGui::TextWrapped("%s", interpreted.c_str());
       }
       ImGui::End();
     }
