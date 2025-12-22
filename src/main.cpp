@@ -659,9 +659,9 @@ int main(int, char **) {
         }
       }
       ImGui::End();
-      ImGui::Begin("Server messages");
-      ImGui::TextWrapped("%s", total_received.data());
-      ImGui::End();
+      // ImGui::Begin("Server messages");
+      // ImGui::TextWrapped("%s", total_received.data());
+      // ImGui::End();
       ImGui::Begin("Action Panel");
 
       if (client != nullptr && ImGui::Button("Disconnect")) {
@@ -701,6 +701,35 @@ int main(int, char **) {
         ImGui::EndListBox();
       }
 
+      if (selected_conn_index >= 0 &&
+          selected_conn_index < static_cast<int>(connections.size())) {
+        static char fwd_message[1024] = "Hello from client!";
+        ImGui::InputTextMultiline("Forward Message", fwd_message,
+                                  sizeof(fwd_message));
+        if (ImGui::Button("Send to Selected")) {
+          const auto &conn = connections[selected_conn_index];
+          std::vector<char> payload;
+          uint32_t net_id = htobe32(conn.client_id);
+          payload.insert(payload.end(), reinterpret_cast<char *>(&net_id),
+                         reinterpret_cast<char *>(&net_id) + sizeof(net_id));
+          uint16_t msg_length =
+              htobe16(static_cast<uint16_t>(std::strlen(fwd_message)));
+          payload.insert(payload.end(), reinterpret_cast<char *>(&msg_length),
+                         reinterpret_cast<char *>(&msg_length) +
+                             sizeof(msg_length));
+          payload.insert(payload.end(), fwd_message,
+                         fwd_message + std::strlen(fwd_message));
+          std::vector<char> packet;
+          packet.push_back(static_cast<char>(MessageType::SEND_MESSAGE));
+          packet.push_back(0x00);
+          uint16_t payload_len = htobe16(static_cast<uint16_t>(payload.size()));
+          packet.push_back(reinterpret_cast<char *>(&payload_len)[0]);
+          packet.push_back(reinterpret_cast<char *>(&payload_len)[1]);
+          packet.insert(packet.end(), payload.begin(), payload.end());
+          client->write(packet);
+        }
+      }
+      ImGui::Separator();
       if (ImGui::Button("Exit")) {
         client.reset(nullptr);
         glfwSetWindowShouldClose(window, GLFW_TRUE);
