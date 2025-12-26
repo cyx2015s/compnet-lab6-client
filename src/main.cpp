@@ -13,14 +13,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <endian.h>
 #include <fcntl.h>
 #include <format>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <netinet/in.h>
 #include <optional>
 #include <print>
+#include <sstream>
 #include <stdexcept>
 #include <stdio.h>
 #include <string>
@@ -302,24 +305,22 @@ std::optional<ReceivedMessage> try_parse_message(std::vector<char> &data) {
 
 std::string interpret_message(const ReceivedMessage &message) {
   switch (message.type) {
-  case MessageType::TIME_RESPONSE:
-    return "服务器时间戳: " +
-           std::format(
-               "{:x}",
-               (static_cast<uint64_t>(*message.payload.begin()) << 56) |
-                   (static_cast<uint64_t>(*(message.payload.begin() + 1))
-                    << 48) |
-                   (static_cast<uint64_t>(*(message.payload.begin() + 2))
-                    << 40) |
-                   (static_cast<uint64_t>(*(message.payload.begin() + 3))
-                    << 32) |
-                   (static_cast<uint64_t>(*(message.payload.begin() + 4))
-                    << 24) |
-                   (static_cast<uint64_t>(*(message.payload.begin() + 5))
-                    << 16) |
-                   (static_cast<uint64_t>(*(message.payload.begin() + 6))
-                    << 8) |
-                   (static_cast<uint64_t>(*(message.payload.begin() + 7))));
+  case MessageType::TIME_RESPONSE: {
+    uint64_t timestamp =
+        (static_cast<uint64_t>(*message.payload.begin()) << 56) |
+        (static_cast<uint64_t>(*(message.payload.begin() + 1)) << 48) |
+        (static_cast<uint64_t>(*(message.payload.begin() + 2)) << 40) |
+        (static_cast<uint64_t>(*(message.payload.begin() + 3)) << 32) |
+        (static_cast<uint64_t>(*(message.payload.begin() + 4)) << 24) |
+        (static_cast<uint64_t>(*(message.payload.begin() + 5)) << 16) |
+        (static_cast<uint64_t>(*(message.payload.begin() + 6)) << 8) |
+        (static_cast<uint64_t>(*(message.payload.begin() + 7)));
+
+    std::stringstream ss;
+    ss << std::put_time(std::gmtime(reinterpret_cast<time_t *>(&timestamp)),
+                        "%Y-%m-%d %H:%M:%S");
+    return "服务器时间戳: (GMT) " + ss.str();
+  }
   case MessageType::NAME_RESPONSE: {
     uint16_t name_length =
         static_cast<uint16_t>((static_cast<uint8_t>(message.payload[0]) << 8) |
