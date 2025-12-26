@@ -76,9 +76,6 @@ class PortListener:
             # client_socket.sendall("欢迎连接到端口监听器服务器!\n".encode('utf-8'))
             
             # 发送测试数据包
-            for _ in range(10):
-                self.send_test_packets(client_socket)
-                threading.Event().wait(0.5)
             
             while self.running:
                 try:
@@ -101,7 +98,9 @@ class PortListener:
                     print(f"[{client_address[0]}:{client_address[1]}] 二进制数据 ({len(data)} 字节): {hex_data}")
                     
                 except socket.timeout:
-                    # client_socket.sendall('还回家吃饭吗？\n'.encode('utf-8'))
+                    self.send_test_packets(client_socket)
+                    threading.Event().wait(0.5)
+            
                     continue
                 except ConnectionResetError:
                     print(f"[-] 连接被重置: {client_address[0]}:{client_address[1]}")

@@ -306,16 +306,12 @@ std::optional<ReceivedMessage> try_parse_message(std::vector<char> &data) {
 std::string interpret_message(const ReceivedMessage &message) {
   switch (message.type) {
   case MessageType::TIME_RESPONSE: {
-    uint64_t timestamp =
-        (static_cast<uint64_t>(*message.payload.begin()) << 56) |
-        (static_cast<uint64_t>(*(message.payload.begin() + 1)) << 48) |
-        (static_cast<uint64_t>(*(message.payload.begin() + 2)) << 40) |
-        (static_cast<uint64_t>(*(message.payload.begin() + 3)) << 32) |
-        (static_cast<uint64_t>(*(message.payload.begin() + 4)) << 24) |
-        (static_cast<uint64_t>(*(message.payload.begin() + 5)) << 16) |
-        (static_cast<uint64_t>(*(message.payload.begin() + 6)) << 8) |
-        (static_cast<uint64_t>(*(message.payload.begin() + 7)));
-
+    uint64_t timestamp = 0;
+    for (auto c : message.payload) {
+      timestamp = (timestamp << 8) | static_cast<uint8_t>(c);
+      std::cout << std::format("{:02x} ", static_cast<uint8_t>(c));
+    }
+    std::cout << std::endl;
     std::stringstream ss;
     ss << std::put_time(std::gmtime(reinterpret_cast<time_t *>(&timestamp)),
                         "%Y-%m-%d %H:%M:%S");
