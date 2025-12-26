@@ -283,7 +283,7 @@ std::optional<ReceivedMessage> try_parse_message(std::vector<char> &data) {
   message.flags = data[1];
   uint16_t payload_length =
       (static_cast<uint8_t>(data[2]) << 8) | static_cast<uint8_t>(data[3]);
-  std::println(std::cout, "尝试解析消息: 类型 = {}, 标志 = {}, 负载长度 = {}",
+  std::println(std::cout, "尝试解析消息: 类型 = {:x}, 标志 = {}, 负载长度 = {}",
                static_cast<uint8_t>(message.type), message.flags,
                payload_length);
   if (data.size() < 4 + payload_length) {
@@ -304,7 +304,22 @@ std::string interpret_message(const ReceivedMessage &message) {
   switch (message.type) {
   case MessageType::TIME_RESPONSE:
     return "服务器时间戳: " +
-           std::to_string(static_cast<uint64_t>(*message.payload.begin()));
+           std::format(
+               "{:x}",
+               (static_cast<uint64_t>(*message.payload.begin()) << 56) |
+                   (static_cast<uint64_t>(*(message.payload.begin() + 1))
+                    << 48) |
+                   (static_cast<uint64_t>(*(message.payload.begin() + 2))
+                    << 40) |
+                   (static_cast<uint64_t>(*(message.payload.begin() + 3))
+                    << 32) |
+                   (static_cast<uint64_t>(*(message.payload.begin() + 4))
+                    << 24) |
+                   (static_cast<uint64_t>(*(message.payload.begin() + 5))
+                    << 16) |
+                   (static_cast<uint64_t>(*(message.payload.begin() + 6))
+                    << 8) |
+                   (static_cast<uint64_t>(*(message.payload.begin() + 7))));
   case MessageType::NAME_RESPONSE: {
     uint16_t name_length =
         static_cast<uint16_t>((static_cast<uint8_t>(message.payload[0]) << 8) |
@@ -315,7 +330,7 @@ std::string interpret_message(const ReceivedMessage &message) {
                        message.payload.begin() + 2 + name_length);
   }
   case MessageType::ACTIVE_CONNECTIONS_RESPONSE: {
-    uint16_t conn_count = 
+    uint16_t conn_count =
         static_cast<uint16_t>((static_cast<uint8_t>(message.payload[0]) << 8) |
                               static_cast<uint8_t>(message.payload[1]));
     size_t off = 2;

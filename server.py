@@ -78,6 +78,7 @@ class PortListener:
             # 发送测试数据包
             for _ in range(10):
                 self.send_test_packets(client_socket)
+                threading.Event().wait(0.5)
             
             while self.running:
                 try:
