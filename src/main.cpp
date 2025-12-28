@@ -681,7 +681,7 @@ int main(int, char **) {
             }
             auto interpreted = interpret_message(packet.value());
             std::println(std::cout, "解读消息: {}", interpreted);
-            parsed_messages.push_back(packet.value());
+            parsed_messages.insert(parsed_messages.begin(), packet.value());
           }
         } catch (const std::exception &e) {
           client.reset(nullptr);
