@@ -1,0 +1,62 @@
+name: build-linux-release
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-20
+      CXX: clang++-20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- OpenGL / GLFW3 / 基础构建工具 ---
+      - name: Install system dependencies (OpenGL, GLFW, CMake)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            mesa-common-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libglfw3-dev
+
+      # --- 安装 clang-20 ---
+      # 官方 llvm 仓库脚本，比手写 apt 源稳定
+      - name: Install clang-20
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh | sudo bash -s -- 20
+          clang-20 --version
+
+      # --- 安装 libstdc++-14 ---
+      # Ubuntu 24.04 里是直接有的
+      - name: Install libstdc++-14
+        run: |
+          sudo apt-get install -y libstdc++-14-dev
+
+      # --- CMake 配置 ---
+      - name: Configure (Release)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-20 \
+            -DCMAKE_CXX_COMPILER=clang++-20
+
+      # --- 构建 ---
+      - name: Build
+        run: |
+          cmake --build build --config Release -j$(nproc)
