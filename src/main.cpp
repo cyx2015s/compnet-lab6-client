@@ -1,7 +1,6 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
-#include <X11/extensions/randr.h>
 #include <algorithm>
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
@@ -311,7 +310,7 @@ std::string interpret_message(const ReceivedMessage &message) {
       timestamp = (timestamp << 8) | static_cast<uint8_t>(c);
       // std::cout << std::format("{:02x} ", static_cast<uint8_t>(c));
     }
-    std::cout << std::endl;
+    // std::cout << std::endl;
     std::stringstream ss;
     ss << std::put_time(std::gmtime(reinterpret_cast<time_t *>(&timestamp)),
                         "%Y-%m-%d %H:%M:%S");
