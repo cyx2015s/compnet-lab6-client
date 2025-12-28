@@ -615,18 +615,18 @@ int main(int, char **) {
       }
       ImGui::Separator();
       if (client != nullptr) {
-        static char message[1024] = "你好, 服务器!";
-        ImGui::InputTextMultiline("消息", message, sizeof(message));
-        if (ImGui::Button("发送")) {
-          try {
-            *client << std::string(message);
-            std::println(std::cout, "已发送: {}", message);
-          } catch (const std::exception &e) {
-            client.reset(nullptr);
-            std::println(std::cerr, "发送失败: {}\n", e.what());
-          }
-        }
-        ImGui::Separator();
+        // static char message[1024] = "你好, 服务器!";
+        // ImGui::InputTextMultiline("消息", message, sizeof(message));
+        // if (ImGui::Button("发送")) {
+        //   try {
+        //     *client << std::string(message);
+        //     std::println(std::cout, "已发送: {}", message);
+        //   } catch (const std::exception &e) {
+        //     client.reset(nullptr);
+        //     std::println(std::cerr, "发送失败: {}\n", e.what());
+        //   }
+        // }
+        // ImGui::Separator();
 
         try {
           auto bytes = client->read(BUFFER_SIZE);
