@@ -2,5 +2,5 @@
     "clangd.arguments": [
         "--compile-commands-dir=${workspaceFolder}/build"
     ],
-    "cmake.sourceDirectory": "/home/mirac/computer-network/compnet-lab6-client"
+    "cmake.sourceDirectory": "${workspaceFolder}/"
 }
