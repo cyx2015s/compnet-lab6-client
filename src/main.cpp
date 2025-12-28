@@ -309,7 +309,7 @@ std::string interpret_message(const ReceivedMessage &message) {
     uint64_t timestamp = 0;
     for (auto c : message.payload) {
       timestamp = (timestamp << 8) | static_cast<uint8_t>(c);
-      std::cout << std::format("{:02x} ", static_cast<uint8_t>(c));
+      // std::cout << std::format("{:02x} ", static_cast<uint8_t>(c));
     }
     std::cout << std::endl;
     std::stringstream ss;
@@ -571,18 +571,18 @@ int main(int, char **) {
       static std::vector<char> total_received;
       static std::vector<ReceivedMessage> parsed_messages;
       static std::vector<Connections> connections = {
-          {.client_id = 1,
-           .addr = {.sin_family = AF_INET,
-                    .sin_port = htons(10829),
-                    .sin_addr = {.s_addr = inet_addr("114.115.116.1")}}},
-          {.client_id = 2,
-           .addr = {.sin_family = AF_INET,
-                    .sin_port = htons(10829),
-                    .sin_addr = {.s_addr = inet_addr("114.115.116.2")}}},
-          {.client_id = 3,
-           .addr = {.sin_family = AF_INET,
-                    .sin_port = htons(10829),
-                    .sin_addr = {.s_addr = inet_addr("114.115.116.3")}}},
+          // {.client_id = 1,
+          //  .addr = {.sin_family = AF_INET,
+          //           .sin_port = htons(10829),
+          //           .sin_addr = {.s_addr = inet_addr("114.115.116.1")}}},
+          // {.client_id = 2,
+          //  .addr = {.sin_family = AF_INET,
+          //           .sin_port = htons(10829),
+          //           .sin_addr = {.s_addr = inet_addr("114.115.116.2")}}},
+          // {.client_id = 3,
+          //  .addr = {.sin_family = AF_INET,
+          //           .sin_port = htons(10829),
+          //           .sin_addr = {.s_addr = inet_addr("114.115.116.3")}}},
       };
       static int selected_conn_index = -1;
       ImGui::Begin("客户端-服务器面板");
