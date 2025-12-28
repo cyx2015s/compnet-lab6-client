@@ -63,7 +63,6 @@ jobs:
       - name: Build
         run: |
           cmake --build build --config Release -j$(nproc)
-          - name: Package release zip
       # --- 打包 ---
       - name: Pack
         run: |
