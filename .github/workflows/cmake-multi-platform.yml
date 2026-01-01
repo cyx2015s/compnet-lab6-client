@@ -74,13 +74,13 @@ jobs:
           mkdir -p package/assets
       
           # 拷贝可执行文件
-          cp build/main package/bin/
+          cp build/client package/bin/
       
           # 拷贝资源文件
           cp assets/font.ttf package/assets/
       
           # 保证可执行权限
-          chmod +x package/bin/main
+          chmod +x package/bin/client
       
           # 打 zip
           zip -r compnet-lab6-client-linux-amd64.zip package/*
