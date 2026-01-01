@@ -430,9 +430,10 @@ public:
         if (!bytes.empty()) {
           std::println(std::cout, "接收 {} 字节数据", bytes.size());
         }
+
         total_received.insert(total_received.end(), bytes.begin(), bytes.end());
         auto packet = try_parse_message(total_received);
-        if (packet.has_value()) {
+        while (packet.has_value()) {
           std::println(std::cout,
                        "收到消息: 类型 = {}, 标志 = {}, 负载长度 = {}",
                        static_cast<uint8_t>(packet.value().type),
@@ -475,6 +476,7 @@ public:
           auto interpreted = interpret_message(packet.value());
           std::println(std::cout, "解读消息: {}", interpreted);
           parsed_messages.insert(parsed_messages.begin(), packet.value());
+          packet = try_parse_message(total_received);
         }
       } catch (const std::exception &e) {
         client.reset(nullptr);
