@@ -548,6 +548,9 @@ public:
     }
     if (ImGui::CollapsingHeader("收到的消息")) {
       ImGui::Text("按时间顺序显示最近收到的消息");
+      if (ImGui::Button("清除历史记录")) {
+        parsed_messages.clear();
+      }
       for (const auto &msg : parsed_messages) {
         auto interpreted = interpret_message(msg);
         ImGui::TextWrapped("%s", interpreted.c_str());
