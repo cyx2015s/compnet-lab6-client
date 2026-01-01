@@ -26,14 +26,13 @@ list(APPEND IMGUI_SOURCES
 )
 
 # 将源文件添加到client目标
-set(SOURCES
-    src/main.cpp
+set(CLIENT_SOURCES
+    src/client.cpp
     ${IMGUI_SOURCES}
 )
 
 # 将源文件链接到client目标
-add_executable(main ${SOURCES})
-
+add_executable(client ${CLIENT_SOURCES})
 include_directories(
     imgui
     imgui/backends
@@ -45,4 +44,4 @@ find_package(OpenGL REQUIRED)
 # sudo apt install libglfw3-dev
 find_package(glfw3 REQUIRED)
 
-target_link_libraries(main PRIVATE OpenGL::GL glfw)
+target_link_libraries(client PRIVATE OpenGL::GL glfw)
