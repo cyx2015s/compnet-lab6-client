@@ -300,6 +300,9 @@ std::optional<ReceivedMessage> try_parse_message(std::vector<char> &data) {
   std::println(std::cout, "成功解析消息: 类型 = {}, 标志 = {}, 负载长度 = {}",
                static_cast<uint8_t>(message.type), message.flags,
                payload_length);
+  for (auto c : message.payload) {
+    std::cout << std::format("{:02x} ", static_cast<uint8_t>(c));
+  }
   return message;
 }
 
@@ -457,8 +460,8 @@ public:
                   static_cast<uint8_t>(packet.value().payload[off + 3]));
               off += 4;
               uint16_t port = static_cast<uint16_t>(
-                  (static_cast<uint8_t>(packet.value().payload[off]) << 8) |
-                  static_cast<uint8_t>(packet.value().payload[off + 1]));
+                  (static_cast<uint8_t>(packet.value().payload[off + 1]) << 8) |
+                  static_cast<uint8_t>(packet.value().payload[off]));
               off += 2;
               Connections conn;
               conn.client_id = id;
@@ -488,6 +491,17 @@ public:
       std::vector<char> packet{static_cast<char>(MessageType::TIME_REQUEST),
                                0x00, 0x00, 0x00};
       client->write(packet);
+    }
+
+    if (client != nullptr && ImGui::Button("[DEBUG] 获取时间 10 * 10 次")) {
+      for (int i = 0; i < 10; i++) {
+        for (int j = 0; j < 10; j++) {
+          std::vector<char> packet{static_cast<char>(MessageType::TIME_REQUEST),
+                                   0x00, 0x00, 0x00};
+          client->write(packet);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
     }
 
     if (client != nullptr && ImGui::Button("获取名字")) {
@@ -531,10 +545,12 @@ public:
                          reinterpret_cast<char *>(&net_id) + sizeof(net_id));
           uint16_t msg_length =
               htobe16(static_cast<uint16_t>(fwd_message.length()));
+          std::println(std::cerr, "负载长度: {}", fwd_message.length());
           payload.insert(payload.end(), reinterpret_cast<char *>(&msg_length),
                          reinterpret_cast<char *>(&msg_length) +
                              sizeof(msg_length));
-          payload.insert(payload.end(), fwd_message.begin(), fwd_message.end());
+          payload.insert(payload.end(), fwd_message.begin(),
+                         fwd_message.begin() + fwd_message.length());
           std::vector<char> packet;
           packet.push_back(static_cast<char>(MessageType::SEND_MESSAGE));
           packet.push_back(0x00);
@@ -546,6 +562,7 @@ public:
         }
       }
     }
+    int time_response_count = 0;
     if (ImGui::CollapsingHeader("收到的消息")) {
       ImGui::Text("按时间顺序显示最近收到的消息");
       if (ImGui::Button("清除历史记录")) {
@@ -556,6 +573,13 @@ public:
         ImGui::TextWrapped("%s", interpreted.c_str());
       }
     }
+    for (const auto &msg : parsed_messages) {
+
+      if (msg.type == MessageType::TIME_RESPONSE) {
+        time_response_count++;
+      }
+    }
+    ImGui::Text("总共收到了 %d 个时间回复", time_response_count);
   }
 };
 
