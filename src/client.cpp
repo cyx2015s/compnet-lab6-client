@@ -649,26 +649,12 @@ int main(int, char **) {
   // ImGui::StyleColorsLight();
 
   ImGuiStyle &style = ImGui::GetStyle();
-  style.ScaleAllSizes(
-      main_scale); // Bake a fixed style scale. (until we have a solution for
-                   // dynamic style scaling, changing this requires resetting
-                   // Style + calling this again)
-  style.FontScaleDpi =
-      main_scale; // Set initial font scale. (using io.ConfigDpiScaleFonts=true
-                  // makes this unnecessary. We leave both here for
-                  // documentation purpose)
+  style.ScaleAllSizes(main_scale);
+  style.FontScaleDpi = main_scale;
 #if GLFW_VERSION_MAJOR >= 3 && GLFW_VERSION_MINOR >= 3
-  io.ConfigDpiScaleFonts =
-      true; // [Experimental] Automatically overwrite style.FontScaleDpi in
-            // Begin() when Monitor DPI changes. This will scale fonts but _NOT_
-            // scale sizes/padding for now.
-  io.ConfigDpiScaleViewports =
-      true; // [Experimental] Scale Dear ImGui and Platform Windows when Monitor
-            // DPI changes.
+  io.ConfigDpiScaleFonts = true;
+  io.ConfigDpiScaleViewports = true;
 #endif
-
-  // When viewports are enabled we tweak WindowRounding/WindowBg so platform
-  // windows can look identical to regular ones.
   if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
     style.WindowRounding = 0.0f;
     style.Colors[ImGuiCol_WindowBg].w = 1.0f;
@@ -688,24 +674,12 @@ int main(int, char **) {
 
   // Main loop
 #ifdef __EMSCRIPTEN__
-  // For an Emscripten build we are disabling file-system access, so let's not
-  // attempt to do a fopen() of the imgui.ini file. You may manually call
-  // LoadIniSettingsFromMemory() to load settings from your own storage.
   io.IniFilename = nullptr;
   EMSCRIPTEN_MAINLOOP_BEGIN
 #else
   while (!glfwWindowShouldClose(window))
 #endif
   {
-    // Poll and handle events (inputs, window resize, etc.)
-    // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to
-    // tell if dear imgui wants to use your inputs.
-    // - When io.WantCaptureMouse is true, do not dispatch mouse input data to
-    // your main application, or clear/overwrite your copy of the mouse data.
-    // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input
-    // data to your main application, or clear/overwrite your copy of the
-    // keyboard data. Generally you may always pass all inputs to dear imgui,
-    // and hide them from your application based on those two flags.
     glfwPollEvents();
     if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0) {
       ImGui_ImplGlfw_Sleep(10);
@@ -741,11 +715,6 @@ int main(int, char **) {
     ImDrawData *draw_data = ImGui::GetDrawData();
     ImGui_ImplOpenGL3_RenderDrawData(draw_data);
 
-    // Update and Render additional Platform Windows
-    // (Platform functions may change the current OpenGL context, so we
-    // save/restore it to make it easier to paste this code elsewhere.
-    //  For this specific demo app we could also call
-    //  glfwMakeContextCurrent(window) directly)
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
       GLFWwindow *backup_current_context = glfwGetCurrentContext();
       ImGui::UpdatePlatformWindows();
