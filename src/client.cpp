@@ -393,6 +393,16 @@ public:
       : client(nullptr), total_received(), parsed_messages(), connections(),
         selected_conn_index(-1), server_ip("127.0.0.1"), server_port("10829"),
         fwd_message("来自另一个套接字的问好！") {}
+  void send_100_time_requests() {
+    for (int i = 0; i < 10; i++) {
+      for (int j = 0; j < 10; j++) {
+        std::vector<char> packet{static_cast<char>(MessageType::TIME_REQUEST),
+                                 0x00, 0x00, 0x00};
+        client->write(packet);
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
   void render() {
     if (ImGui::CollapsingHeader("连接服务器")) {
 
@@ -461,7 +471,7 @@ public:
                   static_cast<uint8_t>(packet.value().payload[off + 3]));
               off += 4;
               uint16_t port = static_cast<uint16_t>(
-                  (static_cast<uint8_t>(packet.value().payload[off ]) << 8) |
+                  (static_cast<uint8_t>(packet.value().payload[off]) << 8) |
                   static_cast<uint8_t>(packet.value().payload[off + 1]));
               off += 2;
               Connections conn;
@@ -496,14 +506,7 @@ public:
     }
 
     if (client != nullptr && ImGui::Button("[DEBUG] 获取时间 10 * 10 次")) {
-      for (int i = 0; i < 10; i++) {
-        for (int j = 0; j < 10; j++) {
-          std::vector<char> packet{static_cast<char>(MessageType::TIME_REQUEST),
-                                   0x00, 0x00, 0x00};
-          client->write(packet);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      }
+      send_100_time_requests();
     }
 
     if (client != nullptr && ImGui::Button("获取名字")) {
@@ -701,6 +704,20 @@ int main(int, char **) {
       static ClientInstanceData client2;
       ImGui::Begin("客户端 2");
       client2.render();
+      ImGui::End();
+
+      ImGui::Begin("调试信息");
+
+      {
+        ImGui::Text("应用平均 %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate,
+                    io.Framerate);
+        if (ImGui::Button("客户端同时发送时间请求")) {
+          if (client1.client != nullptr && client2.client != nullptr) {
+            client1.send_100_time_requests();
+            client2.send_100_time_requests();
+          }
+        }
+      }
       ImGui::End();
     }
 
