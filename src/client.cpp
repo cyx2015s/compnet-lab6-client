@@ -505,7 +505,7 @@ public:
       client->write(packet);
     }
 
-    if (client != nullptr && ImGui::Button("[DEBUG] 获取时间 10 * 10 次")) {
+    if (client != nullptr && ImGui::Button("[DEBUG] 获取时间 100 次")) {
       send_100_time_requests();
     }
 
