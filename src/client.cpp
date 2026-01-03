@@ -713,8 +713,12 @@ int main(int, char **) {
                     io.Framerate);
         if (ImGui::Button("客户端同时发送时间请求")) {
           if (client1.client != nullptr && client2.client != nullptr) {
-            client1.send_100_time_requests();
-            client2.send_100_time_requests();
+            std::thread client1_sender(
+                []() { client1.send_100_time_requests(); });
+            std::thread client2_sender(
+                []() { client2.send_100_time_requests(); });
+            client1_sender.join();
+            client2_sender.join();
           }
         }
       }
