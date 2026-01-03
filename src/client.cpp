@@ -461,8 +461,8 @@ public:
                   static_cast<uint8_t>(packet.value().payload[off + 3]));
               off += 4;
               uint16_t port = static_cast<uint16_t>(
-                  (static_cast<uint8_t>(packet.value().payload[off + 1]) << 8) |
-                  static_cast<uint8_t>(packet.value().payload[off]));
+                  (static_cast<uint8_t>(packet.value().payload[off ]) << 8) |
+                  static_cast<uint8_t>(packet.value().payload[off + 1]));
               off += 2;
               Connections conn;
               conn.client_id = id;
